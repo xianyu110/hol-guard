@@ -106,7 +106,7 @@ export function ProtectionAuthorityNotice(props: {
   useEffect(() => {
     if (props.status) setProofOpen(false);
   }, [props.status]);
-  const gatePending = props.approvalGate === null && !props.error;
+  const gatePending = props.approvalGate === null;
 
   const copyCommand = async () => {
     try {
@@ -137,7 +137,7 @@ export function ProtectionAuthorityNotice(props: {
             disabled={props.busy || gatePending}
             onClick={() => { setPendingAction(view.action.kind === "repair" ? "repair" : "acknowledge"); setProofOpen(true); }}
             className="inline-flex min-h-11 items-center rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
-          >{gatePending ? "Loading approval settings…" : view.actionLabel}</button> : null}
+          >{gatePending && !props.error ? "Loading approval settings…" : view.actionLabel}</button> : null}
           {view.action.kind === "none" ? <button
             type="button"
             onClick={() => { void copyCommand(); }}

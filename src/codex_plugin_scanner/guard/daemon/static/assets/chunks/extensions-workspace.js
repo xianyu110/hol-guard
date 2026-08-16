@@ -2129,7 +2129,7 @@ function ProtectionAuthorityNotice(props) {
   reactExports.useEffect(() => {
     if (props.status) setProofOpen(false);
   }, [props.status]);
-  const gatePending = props.approvalGate === null && !props.error;
+  const gatePending = props.approvalGate === null;
   const copyCommand = async () => {
     try {
       await navigator.clipboard.writeText(view.command);
@@ -2158,7 +2158,7 @@ function ProtectionAuthorityNotice(props) {
                 setProofOpen(true);
               },
               className: "inline-flex min-h-11 items-center rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60",
-              children: gatePending ? "Loading approval settings…" : view.actionLabel
+              children: gatePending && !props.error ? "Loading approval settings…" : view.actionLabel
             }
           ) : null,
           view.action.kind === "none" ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
@@ -2838,6 +2838,7 @@ function ProtectionCenterWorkspace() {
     }
   }, [load, pending, state]);
   const runAuthorityAction = reactExports.useCallback(async (kind, credentials) => {
+    const startHealth = state.kind === "ready" ? state.effective.health : null;
     setRecoveryBusy(true);
     setRecoveryError(null);
     setRecoveryStatus(null);
@@ -2857,6 +2858,9 @@ function ProtectionCenterWorkspace() {
       if (fresh && fresh.health === wanted) {
         setRecoveryError(null);
         setRecoveryStatus(kind === "acknowledge" ? "The limited state is acknowledged. Guard remains fail-safe until trusted protection can be restored." : "Local protection repaired and verified.");
+      } else if (fresh && startHealth !== null && fresh.health !== startHealth) {
+        setRecoveryError(null);
+        setRecoveryStatus("The protection state changed during the attempt. This page now shows the latest status.");
       } else {
         setRecoveryStatus(null);
         setRecoveryError(authorityActionErrorMessage(error));

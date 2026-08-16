@@ -311,6 +311,7 @@ export function ProtectionCenterWorkspace() {
   }, [load, pending, state]);
 
   const runAuthorityAction = useCallback(async (kind: "repair" | "acknowledge", credentials: { approval_password?: string; approval_totp_code?: string }) => {
+    const startHealth = state.kind === "ready" ? state.effective.health : null;
     setRecoveryBusy(true);
     setRecoveryError(null);
     setRecoveryStatus(null);
@@ -338,6 +339,11 @@ export function ProtectionCenterWorkspace() {
         setRecoveryStatus(kind === "acknowledge"
           ? "The limited state is acknowledged. Guard remains fail-safe until trusted protection can be restored."
           : "Local protection repaired and verified.");
+      } else if (fresh && startHealth !== null && fresh.health !== startHealth) {
+        // The state moved on during the attempt; the original error describes
+        // a view that no longer exists. Show the transition, not the stale error.
+        setRecoveryError(null);
+        setRecoveryStatus("The protection state changed during the attempt. This page now shows the latest status.");
       } else {
         setRecoveryStatus(null);
         setRecoveryError(authorityActionErrorMessage(error));
