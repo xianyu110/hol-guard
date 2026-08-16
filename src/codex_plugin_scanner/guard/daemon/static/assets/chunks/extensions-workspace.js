@@ -2899,6 +2899,10 @@ function ProtectionCenterWorkspace() {
       },
       onCheckAgain: () => {
         void load();
+        setRecoveryError(null);
+        void resolveApprovalGate({ failClosed: true }).catch(() => {
+          setRecoveryError("Guard could not load the local approval settings yet. Check the connection and try again, or run `hol-guard command controls recover-authority` in your terminal.");
+        });
       }
     }
   ) : null;

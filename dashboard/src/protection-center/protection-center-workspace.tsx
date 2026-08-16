@@ -376,7 +376,15 @@ export function ProtectionCenterWorkspace() {
     status={recoveryStatus}
     approvalGate={resolvedApprovalGate}
     onAction={(kind, credentials) => { void runAuthorityAction(kind, credentials); }}
-    onCheckAgain={() => { void load(); }}
+    onCheckAgain={() => {
+      void load();
+      // Re-resolve the approval gate too so a failed load does not leave the
+      // action disabled until a full page reload.
+      setRecoveryError(null);
+      void resolveApprovalGate({ failClosed: true }).catch(() => {
+        setRecoveryError("Guard could not load the local approval settings yet. Check the connection and try again, or run `hol-guard command controls recover-authority` in your terminal.");
+      });
+    }}
   /> : null;
 
   if (routeState.route.kind === "detail" && selectedExtension) {
