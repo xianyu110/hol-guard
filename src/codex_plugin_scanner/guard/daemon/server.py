@@ -25,7 +25,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any, BinaryIO, ClassVar, TypeAlias, TypedDict, TypeGuard, cast
 from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urlparse, urlunparse
@@ -217,6 +217,7 @@ from ..store_evidence import (
 )
 from ..store_storage_maintenance import DEFAULT_GUARD_EVENT_LIMIT, DEFAULT_RECEIPT_DETAIL_LIMIT
 from ..supply_chain_repair import coordinate_supply_chain_repair
+from .bounded_http import BoundedThreadingHTTPServer
 from .command_activity_api import (
     handle_command_activity_analytics,
     handle_command_activity_diagnostics,
@@ -474,7 +475,7 @@ class _BoundedRequestExecutor:
                 self._queue.task_done()
 
 
-class _GuardDaemonHttpServer(HTTPServer):
+class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
     request_queue_size = _MAX_CONCURRENT_DAEMON_CONNECTIONS
 
     store: GuardStore
@@ -541,7 +542,7 @@ class _GuardDaemonHttpServer(HTTPServer):
     auth_audit_lock: threading.Lock
     auth_audit_windows: dict[_AuthAuditKey, _AuthAuditWindow]
 
-    def handle_error(self, request: object, client_address: tuple[str, int]) -> None:
+    def handle_error(self, request: Any, client_address: Any) -> None:
         """Suppress expected peer disconnects without hiding server defects."""
 
         import sys
@@ -689,8 +690,10 @@ class _GuardDaemonHttpServer(HTTPServer):
         )
         return self.extension_control_runtime.refresh(view)
 
-    def process_request(self, request: object, client_address: tuple[str, int]) -> None:
+    def process_request(self, request: Any, client_address: Any) -> None:
         request_socket = cast(socket.socket, request)
+        if not self._guard_admit_request(request_socket):
+            return
         admitted = self.connection_capacity.acquire(blocking=False)
         if not admitted:
             self._evict_oldest_unclassified_connection()
@@ -702,6 +705,7 @@ class _GuardDaemonHttpServer(HTTPServer):
             with self.request_capacity_lock:
                 self.rejected_requests += 1
             self.shutdown_request(request_socket)
+            self._guard_release_request()
             return
         with suppress(OSError):
             request_socket.settimeout(_DAEMON_REQUEST_READ_TIMEOUT_SECONDS)
@@ -744,6 +748,7 @@ class _GuardDaemonHttpServer(HTTPServer):
             self._request_capacity_for_kind(capacity_kind).release()
         if was_active:
             self.connection_capacity.release()
+            self._guard_release_request()
 
     def _register_unclassified_connection(self, request: socket.socket) -> None:
         accepted_at = time.monotonic()
@@ -1978,6 +1983,9 @@ def _repair_command_activity_persistence_health(store: GuardStore) -> None:
     if shadow is None:
         raise RuntimeError("command shadow repair probe was not selected")
     store.probe_command_activity_persistence(evidence, shadow=shadow)
+
+
+_GuardDaemonHttpServer = _GuardDaemonHTTPServer
 
 
 class _GuardDaemonHandler(BaseHTTPRequestHandler):

@@ -303,6 +303,10 @@ def _resolve_legacy_args(
 def main(argv: list[str] | None = None) -> int:
     program_name = Path(sys.argv[0]).name or "plugin-scanner"
     requested_argv = argv or sys.argv[1:]
+    if bool(getattr(sys, "frozen", False)) and requested_argv[:1] == ["__guard-bounded-hook"]:
+        from .guard.adapters.bounded_cli_hook_bridge import main_from_argv
+
+        return main_from_argv(requested_argv[1:])
     if _is_hol_guard_program(program_name) and requested_argv and requested_argv[0] == "secrets":
         from .guard.secrets.cli import main as secrets_main
 

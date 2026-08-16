@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import errno
-import os
 import secrets
 import threading
 import time
@@ -172,7 +171,7 @@ class _AdmissionState:
 _STATE = _AdmissionState()
 
 
-def _request_payload(args: tuple[object, ...], kwargs: Mapping[str, object]) -> object:
+def _request_input(args: tuple[object, ...], kwargs: Mapping[str, object]) -> object:
     for key in ("request", "payload", "message"):
         if key in kwargs:
             return kwargs[key]
@@ -186,7 +185,7 @@ def _operation(args: tuple[object, ...], kwargs: Mapping[str, object]) -> str:
     explicit = kwargs.get("operation")
     if isinstance(explicit, str):
         return explicit.lower()
-    payload = _request_payload(args, kwargs)
+    payload = _request_input(args, kwargs)
     if isinstance(payload, Mapping):
         operation = payload.get("operation")
         if isinstance(operation, str):
@@ -233,7 +232,7 @@ def native_resident_admission(function: Callable[P, R]) -> Callable[P, R]:
     Resident requests are deterministic reads and evaluations, so one bounded
     retry is safe. Authentication, integrity, manifest, and protocol failures
     are never retried. The wrapper stores counters only and never stores request
-    payloads, commands, paths, endpoints, credentials, or exception text.
+    payloads, commands, paths, endpoints, authentication material, or exception text.
     """
 
     @wraps(function)

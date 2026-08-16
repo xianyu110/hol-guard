@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from codex_plugin_scanner.guard.adapters.base import HarnessContext
+from codex_plugin_scanner.guard.cli import commands as _guard_commands  # noqa: F401
 from codex_plugin_scanner.guard.cli import commands_hook_runtime_review as runtime_review
 from codex_plugin_scanner.guard.cli.commands_hook_runtime_state import (
     RuntimeArtifactHookState,
@@ -90,7 +91,6 @@ def test_cursor_queue_receipt_and_response_preserve_exact_review_action(
         lambda _guard_home: (_ for _ in ()).throw(RuntimeError("surface unavailable")),
     )
     monkeypatch.setattr(runtime_review, "queue_blocked_approvals", capture_queue)
-    monkeypatch.setattr(runtime_review, "_should_emit_copilot_hook_response", lambda _args: False)
     monkeypatch.setattr(
         runtime_review,
         "_should_emit_prequeue_native_hook_response",

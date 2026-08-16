@@ -21,18 +21,14 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from .frozen_runtime_commands import (
+    FROZEN_DAEMON_RECOVER_ARG,
+    frozen_daemon_recovery_command,
+    is_frozen_guard_runtime,
+)
+
 _FROZEN_BRIDGE_ARG = "--_hol-guard-codex-bridge"
-_FROZEN_DAEMON_RECOVER_ARG = "--_hol-guard-codex-daemon-recover"
-
-
-def is_frozen_guard_runtime() -> bool:
-    """Return whether this process is a PyInstaller-style frozen Guard binary."""
-
-    return bool(getattr(sys, "frozen", False)) and Path(sys.executable).is_file()
-
-
-def _compact_json(payload: Mapping[str, object]) -> str:
-    return json.dumps(dict(payload), sort_keys=True, separators=(",", ":"))
+_FROZEN_DAEMON_RECOVER_ARG = FROZEN_DAEMON_RECOVER_ARG
 
 
 def _decode_private_payload(raw: str, *, label: str) -> dict[str, object]:
@@ -43,23 +39,6 @@ def _decode_private_payload(raw: str, *, label: str) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError(f"{label} payload must be a JSON object")
     return {str(key): value for key, value in payload.items() if isinstance(key, str)}
-
-
-def frozen_daemon_recovery_command(
-    guard_home: Path,
-    home_dir: Path,
-    *,
-    executable: str | None = None,
-) -> tuple[str, ...]:
-    """Build the authenticated frozen-Core daemon recovery command."""
-
-    payload = _compact_json(
-        {
-            "guard_home": str(guard_home.resolve(strict=False)),
-            "home_dir": str(home_dir.resolve(strict=False)),
-        }
-    )
-    return (executable or sys.executable, _FROZEN_DAEMON_RECOVER_ARG, payload)
 
 
 def install_frozen_codex_runtime(*, force: bool = False) -> bool:

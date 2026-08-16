@@ -39,15 +39,36 @@ pub fn classify_io_error(error: &io::Error) -> IoFailureClass {
         }
         _ if matches!(
             error.raw_os_error(),
-            Some(50 | 51 | 52 | 53 | 54 | 64 | 65 | 10050 | 10051 | 10052 | 10053 | 10054 | 10060 | 10064 | 10065)
-        ) => IoFailureClass::NetworkChange,
+            Some(
+                50 | 51
+                    | 52
+                    | 53
+                    | 54
+                    | 64
+                    | 65
+                    | 10050
+                    | 10051
+                    | 10052
+                    | 10053
+                    | 10054
+                    | 10060
+                    | 10064
+                    | 10065
+            )
+        ) =>
+        {
+            IoFailureClass::NetworkChange
+        }
         _ => IoFailureClass::Other,
     }
 }
 
 pub fn accept_retry_delay(consecutive_failures: u32, error: &io::Error) -> Duration {
     match classify_io_error(error) {
-        IoFailureClass::Interrupted | IoFailureClass::ClientAbort => Duration::ZERO,
+        IoFailureClass::Interrupted => Duration::ZERO,
+        IoFailureClass::ClientAbort => ACCEPT_BACKOFF_MIN
+            .saturating_mul(1u32 << consecutive_failures.min(5))
+            .min(ACCEPT_BACKOFF_MAX),
         IoFailureClass::Timeout => ACCEPT_BACKOFF_MIN,
         IoFailureClass::ResourcePressure => {
             let shift = consecutive_failures.min(7);
@@ -100,7 +121,12 @@ mod tests {
     fn client_disconnects_are_not_runtime_integrity_failures() {
         let error = io::Error::new(io::ErrorKind::BrokenPipe, "fixture");
         assert_eq!(classify_io_error(&error), IoFailureClass::ClientAbort);
-        assert_eq!(write_error(&error, "fallback"), "native_client_disconnected");
+        assert!(accept_retry_delay(0, &error) >= ACCEPT_BACKOFF_MIN);
+        assert!(accept_retry_delay(100, &error) <= ACCEPT_BACKOFF_MAX);
+        assert_eq!(
+            write_error(&error, "fallback"),
+            "native_client_disconnected"
+        );
     }
 
     #[test]

@@ -46,6 +46,8 @@ def _init_repository(workspace: Path, remote: str, *, verified_clone: bool = Tru
     _git(workspace, "init")
     _git(workspace, "config", "user.email", "guard@example.invalid")
     _git(workspace, "config", "user.name", "Guard Test")
+    _git(workspace, "config", "commit.gpgsign", "false")
+    _git(workspace, "config", "core.hooksPath", ".git/no-hooks")
     (workspace / "README.md").write_text("guard\n", encoding="utf-8")
     _git(workspace, "add", "README.md")
     _git(workspace, "commit", "-m", "initial")

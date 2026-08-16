@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     )
 
 
+from ..daemon.bounded_http import daemon_admission_snapshot
+from ..native_runtime_admission import native_resident_admission_snapshot
 from ..runtime.command_queue import command_queue_status, repair_command_queue_state
 from ._commands_shared import *
 from .commands_dispatch_trust import build_trust_doctor_payload
@@ -344,6 +346,10 @@ def _run_guard_doctor_command(
     if getattr(args, "repair", False):
         command_queue_payload["repair"] = repair_command_queue_state(store)
     payload["command_queue"] = command_queue_payload
+    payload["native_runtime"] = {
+        "admission": native_resident_admission_snapshot(),
+        "daemon_http": daemon_admission_snapshot(),
+    }
     payload["trust"] = build_trust_doctor_payload(store)
     payload["supply_chain"] = build_local_supply_chain_posture(store, config, now=_now())
     payload["aibom"] = build_aibom_status_payload(store, context, generated_at=_now())

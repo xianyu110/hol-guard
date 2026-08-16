@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod hardening;
+
 use guard_command::{parse_command, CommandModelRequestV1};
 use guard_contracts::{
     NativeHookRequestV1, RuntimeCapabilitiesV1, MAX_NATIVE_REQUEST_BYTES,
@@ -20,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const BUILD_SHA: &str = match option_env!("HOL_GUARD_BUILD_SHA") {
     Some(value) => value,
@@ -47,7 +49,6 @@ const AUTH_TIMEOUT: Duration = Duration::from_millis(250);
 const HEADER_TIMEOUT: Duration = Duration::from_millis(250);
 const PAYLOAD_TIMEOUT: Duration = Duration::from_secs(2);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(1);
-const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(10);
 const MAX_JSON_DEPTH: usize = 32;
 const MAX_JSON_COLLECTION_ITEMS: usize = 4_096;
 const MAX_JSON_STRING_BYTES: usize = 1024 * 1024;
@@ -109,6 +110,7 @@ struct PendingRequest {
     request_id: [u8; FRAME_REQUEST_ID_BYTES],
     request_digest: [u8; FRAME_DIGEST_BYTES],
     length: usize,
+    accepted_at: Instant,
 }
 
 #[derive(Clone, Copy)]
@@ -270,7 +272,7 @@ fn read_stdin_bounded() -> Result<Vec<u8>, String> {
     io::stdin()
         .take(MAX_NATIVE_REQUEST_BYTES as u64 + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| "native_request_read_failed".to_owned())?;
+        .map_err(|error| hardening::read_error(&error, "native_request_read_failed"))?;
     if bytes.len() > MAX_NATIVE_REQUEST_BYTES {
         return Err("native_request_too_large".into());
     }
@@ -451,6 +453,7 @@ fn read_request_header(mut stream: BoxedResidentStream) -> Result<PendingRequest
         request_id,
         request_digest,
         length,
+        accepted_at: Instant::now(),
     })
 }
 
@@ -473,13 +476,13 @@ fn write_bound_response(
     header.extend_from_slice(&(response.len() as u32).to_be_bytes());
     stream
         .write_all(&header)
-        .map_err(|_| "native_frame_write_failed".to_owned())?;
+        .map_err(|error| hardening::write_error(&error, "native_frame_write_failed"))?;
     stream
         .write_all(response)
-        .map_err(|_| "native_frame_write_failed".to_owned())?;
+        .map_err(|error| hardening::write_error(&error, "native_frame_write_failed"))?;
     stream
         .flush()
-        .map_err(|_| "native_frame_write_failed".to_owned())?;
+        .map_err(|error| hardening::write_error(&error, "native_frame_write_failed"))?;
     Ok(())
 }
 
@@ -489,6 +492,11 @@ fn write_overload(pending: &mut PendingRequest) {
 }
 
 fn handle_pending_request(mut pending: PendingRequest) {
+    if hardening::request_expired(pending.accepted_at) {
+        let response = error_response("native_request_deadline_exceeded", true);
+        let _ = write_bound_response(&mut *pending.stream, &pending.request_id, &response);
+        return;
+    }
     let _ = pending
         .stream
         .set_resident_read_timeout(Some(PAYLOAD_TIMEOUT));
@@ -639,23 +647,24 @@ fn serve(socket_path: &str) -> Result<(), String> {
     let token = Arc::new(read_resident_auth_token()?);
     let sender = start_resident_workers(token);
     let parent_alive = resident_parent_liveness()?;
+    let mut consecutive_accept_failures = 0;
     while parent_alive.load(Ordering::Acquire) {
         match listener.accept() {
             Ok((stream, _address)) => {
+                consecutive_accept_failures = 0;
                 if stream.set_nonblocking(false).is_err() {
                     continue;
                 }
                 admit_connection(&sender, Box::new(stream))?
             }
             Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::Interrupted
-                        | io::ErrorKind::WouldBlock
-                        | io::ErrorKind::ConnectionAborted
-                ) =>
+                if hardening::classify_io_error(&error) != hardening::IoFailureClass::Other =>
             {
-                thread::sleep(ACCEPT_RETRY_DELAY);
+                consecutive_accept_failures += 1;
+                thread::sleep(hardening::accept_retry_delay(
+                    consecutive_accept_failures,
+                    &error,
+                ));
             }
             Err(_) => return Err("native_socket_accept_failed".to_owned()),
         }
@@ -686,18 +695,21 @@ fn serve_loopback(address: &str) -> Result<(), String> {
 
     let token = Arc::new(read_resident_auth_token()?);
     let sender = start_resident_workers(token);
+    let mut consecutive_accept_failures = 0;
     loop {
         match listener.accept() {
-            Ok((stream, _address)) => admit_connection(&sender, Box::new(stream))?,
+            Ok((stream, _address)) => {
+                consecutive_accept_failures = 0;
+                admit_connection(&sender, Box::new(stream))?;
+            }
             Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::Interrupted
-                        | io::ErrorKind::WouldBlock
-                        | io::ErrorKind::ConnectionAborted
-                ) =>
+                if hardening::classify_io_error(&error) != hardening::IoFailureClass::Other =>
             {
-                thread::sleep(ACCEPT_RETRY_DELAY);
+                consecutive_accept_failures += 1;
+                thread::sleep(hardening::accept_retry_delay(
+                    consecutive_accept_failures,
+                    &error,
+                ));
             }
             Err(_) => return Err("native_resident_loopback_accept_failed".to_owned()),
         }
@@ -718,7 +730,7 @@ fn read_resident_auth_token() -> Result<[u8; AUTH_TOKEN_BYTES], String> {
     io::stdin()
         .take((AUTH_TOKEN_BYTES * 2 + 2) as u64)
         .read_to_string(&mut encoded)
-        .map_err(|_| "native_resident_auth_read_failed".to_owned())?;
+        .map_err(|error| hardening::read_error(&error, "native_resident_auth_read_failed"))?;
     let encoded = encoded.trim();
     if encoded.len() != AUTH_TOKEN_BYTES * 2 {
         return Err("native_resident_auth_invalid".into());
@@ -735,10 +747,10 @@ fn read_resident_auth_token() -> Result<[u8; AUTH_TOKEN_BYTES], String> {
 fn write_bytes_response(response: &[u8]) -> Result<(), String> {
     io::stdout()
         .write_all(response)
-        .map_err(|_| "native_response_write_failed".to_owned())?;
+        .map_err(|error| hardening::write_error(&error, "native_response_write_failed"))?;
     io::stdout()
         .write_all(b"\n")
-        .map_err(|_| "native_response_write_failed".to_owned())?;
+        .map_err(|error| hardening::write_error(&error, "native_response_write_failed"))?;
     Ok(())
 }
 

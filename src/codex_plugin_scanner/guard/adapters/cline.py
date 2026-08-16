@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from ..frozen_codex_runtime import is_frozen_guard_runtime
+from ..frozen_runtime_commands import is_frozen_guard_runtime
 from ..models import GuardArtifact, HarnessDetection
 from ..shims import ensure_guard_shim_path_in_shell_profile, install_guard_shim, remove_guard_shim
 from .base import HarnessAdapter, HarnessContext

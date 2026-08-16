@@ -149,9 +149,7 @@ def _overload_response() -> bytes:
         b"Connection: close\r\n"
         b"Content-Type: application/json\r\n"
         b"Cache-Control: no-store\r\n"
-        b"Retry-After: 1\r\n"
-        + f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii")
-        + payload
+        b"Retry-After: 1\r\n" + f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii") + payload
     )
 
 
@@ -182,35 +180,43 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
             _MAX_SOCKET_TIMEOUT_SECONDS,
         )
 
-    def verify_request(self, request: socket.socket, client_address: object) -> bool:
+    def verify_request(self, request: Any, client_address: Any) -> bool:
         if not _loopback(client_address):
             _METRICS.rejected_non_loopback()
             return False
         return super().verify_request(request, cast(Any, client_address))
 
-    def process_request(self, request: socket.socket, client_address: object) -> None:
+    def process_request(self, request: Any, client_address: Any) -> None:
+        request_socket = cast(socket.socket, request)
+        if not self._guard_admit_request(request_socket):
+            return
+        try:
+            super().process_request(request_socket, client_address)
+        except BaseException:
+            self._guard_release_request()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, cast(Any, client_address))
+        finally:
+            self._guard_release_request()
+
+    def _guard_admit_request(self, request: socket.socket) -> bool:
         if not self._guard_slots.acquire(blocking=False):
             _METRICS.rejected_overload()
             self._reject_overload(request)
             self.shutdown_request(request)
-            return
+            return False
         _METRICS.acquired()
-        try:
-            request.settimeout(self._guard_socket_timeout)
-            super().process_request(request, cast(Any, client_address))
-        except BaseException:
-            self._guard_slots.release()
-            _METRICS.released()
-            raise
+        request.settimeout(self._guard_socket_timeout)
+        return True
 
-    def process_request_thread(self, request: socket.socket, client_address: object) -> None:
-        try:
-            super().process_request_thread(request, cast(Any, client_address))
-        finally:
-            self._guard_slots.release()
-            _METRICS.released()
+    def _guard_release_request(self) -> None:
+        self._guard_slots.release()
+        _METRICS.released()
 
-    def handle_error(self, request: socket.socket, client_address: object) -> None:
+    def handle_error(self, request: Any, client_address: Any) -> None:
         error = cast(BaseException | None, __import__("sys").exception())
         if isinstance(error, socket.timeout):
             _METRICS.timeout()

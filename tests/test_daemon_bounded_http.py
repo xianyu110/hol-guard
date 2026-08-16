@@ -12,13 +12,15 @@ from codex_plugin_scanner.guard.daemon.bounded_http import (
     BoundedThreadingHTTPServer,
     daemon_admission_snapshot,
 )
+from codex_plugin_scanner.guard.daemon.server import GuardDaemonServer
+from codex_plugin_scanner.guard.store import GuardStore
 
 
 class _Handler(BaseHTTPRequestHandler):
     release = threading.Event()
     entered = threading.Event()
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if self.path == "/hold":
             self.entered.set()
             self.release.wait(timeout=2)
@@ -133,3 +135,22 @@ def test_daemon_admission_snapshot_is_aggregate_only() -> None:
         "non_loopback_rejections",
     }
     assert all(isinstance(value, int) and value >= 0 for value in payload.values())
+
+
+def test_real_daemon_subclass_enforces_bounded_admission(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HOL_GUARD_DAEMON_MAX_ACTIVE_REQUESTS", "1")
+    monkeypatch.setenv("HOL_GUARD_DAEMON_SOCKET_TIMEOUT_SECONDS", "0.5")
+    daemon = GuardDaemonServer(GuardStore(tmp_path / "guard-home"), host="127.0.0.1", port=0)
+    daemon.start()
+    held = socket.create_connection(("127.0.0.1", daemon.port), timeout=1)
+    try:
+        held.sendall(b"POST /v1/health HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n")
+        deadline = time.monotonic() + 1
+        while daemon_admission_snapshot()["active"] < 1 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        status, body = _get(daemon.port, "/v1/health")
+        assert status == 503
+        assert json.loads(body)["error"] == "daemon_overloaded"
+    finally:
+        held.close()
+        daemon.stop()

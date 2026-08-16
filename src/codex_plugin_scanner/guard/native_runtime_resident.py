@@ -26,6 +26,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from .codex_hook_launch_runtime import run_isolated_hook_process
+from .native_runtime_admission import native_resident_admission
 from .native_runtime_resilience import (
     native_record_resident_failure,
     native_record_restart,
@@ -489,6 +490,7 @@ def _send_authenticated_unix_request(
     )
 
 
+@native_resident_admission
 def resident_native_request(
     *,
     executable: Path,
