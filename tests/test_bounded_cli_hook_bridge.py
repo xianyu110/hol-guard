@@ -378,3 +378,78 @@ def test_oversized_input_uses_configured_harness_native_deny(
 
     assert returncode == 0
     assert _json_object(output.getvalue())["permissionDecision"] == "deny"
+
+
+def test_invalid_frozen_args_deny_before_daemon_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path, harness="grok")
+    config["cli_args"] = ["-c", "echo bypassed"]
+    config["frozen_launcher"] = True
+    monkeypatch.setattr(bounded_cli_hook_bridge.sys, "frozen", True, raising=False)
+
+    def forbidden_daemon(**kwargs: object) -> object:
+        del kwargs
+        raise AssertionError("invalid frozen arguments must not reach the daemon")
+
+    monkeypatch.setattr(bounded_cli_hook_bridge, "_try_daemon_hook", forbidden_daemon)
+    output = io.StringIO()
+    with redirect_stdout(output):
+        returncode = bounded_cli_hook_bridge.run_bounded_cli_hook(config, input_text="{}")
+
+    assert returncode == 0
+    assert _json_object(output.getvalue())["decision"] == "deny"
+
+
+def test_frozen_path_resolution_failure_denies_before_daemon_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path, harness="grok")
+    config["frozen_launcher"] = True
+    monkeypatch.setattr(bounded_cli_hook_bridge.sys, "frozen", True, raising=False)
+
+    def fail_resolve(self: Path, *, strict: bool = False) -> Path:
+        del self, strict
+        raise RuntimeError("symlink loop")
+
+    def forbidden_daemon(**kwargs: object) -> object:
+        del kwargs
+        raise AssertionError("unresolved frozen paths must not reach the daemon")
+
+    monkeypatch.setattr(bounded_cli_hook_bridge.Path, "resolve", fail_resolve)
+    monkeypatch.setattr(bounded_cli_hook_bridge, "_try_daemon_hook", forbidden_daemon)
+    output = io.StringIO()
+    with redirect_stdout(output):
+        returncode = bounded_cli_hook_bridge.run_bounded_cli_hook(config, input_text="{}")
+
+    assert returncode == 0
+    assert _json_object(output.getvalue())["decision"] == "deny"
+
+
+def test_valid_frozen_args_retain_daemon_fast_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path, harness="grok")
+    config["frozen_launcher"] = True
+    monkeypatch.setattr(bounded_cli_hook_bridge.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(bounded_cli_hook_bridge.sys, "executable", "/app/hol-guard")
+    monkeypatch.setattr(
+        bounded_cli_hook_bridge,
+        "_try_daemon_hook",
+        lambda **kwargs: ('{"decision":"allow"}\n', "", 0),
+    )
+
+    def forbidden_runner(*args: object, **kwargs: object) -> BoundedHookProcessResult:
+        del args, kwargs
+        raise AssertionError("valid daemon result must avoid fallback startup")
+
+    monkeypatch.setattr(bounded_cli_hook_bridge, "run_isolated_hook_process", forbidden_runner)
+    output = io.StringIO()
+    with redirect_stdout(output):
+        returncode = bounded_cli_hook_bridge.run_bounded_cli_hook(config, input_text="{}")
+
+    assert returncode == 0
+    assert _json_object(output.getvalue())["decision"] == "allow"

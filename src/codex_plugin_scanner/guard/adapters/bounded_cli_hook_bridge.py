@@ -121,7 +121,7 @@ def _validated_frozen_cli_args(
     try:
         supplied_guard_home = Path(cli_args[3]).resolve(strict=False)
         expected_guard_home = guard_home.resolve(strict=False)
-    except OSError:
+    except (OSError, RuntimeError):
         return None
     if supplied_guard_home != expected_guard_home:
         return None
@@ -504,21 +504,6 @@ def run_bounded_cli_hook(config: Mapping[str, object], *, input_text: str) -> in
         return _emit_failure(harness=harness, input_text=input_text)
     package_root = Path(package_root_value)
     guard_home = Path(guard_home_value)
-    # Fast path: serve the hook from the already-running daemon (~50ms)
-    # instead of paying a fresh interpreter + full CLI import (~1s).
-    daemon_result = _try_daemon_hook(
-        guard_home=guard_home,
-        harness=harness,
-        input_text=input_text,
-        timeout_seconds=float(timeout_seconds),
-    )
-    if daemon_result is not None:
-        daemon_stdout, daemon_stderr, daemon_exit = daemon_result
-        if daemon_stdout:
-            _ = sys.stdout.write(daemon_stdout)
-        if daemon_stderr:
-            print(daemon_stderr, file=sys.stderr)
-        return daemon_exit
     runtime_frozen = bool(getattr(sys, "frozen", False))
     if runtime_frozen:
         direct_cli_args = _validated_frozen_cli_args(
@@ -537,6 +522,21 @@ def run_bounded_cli_hook(config: Mapping[str, object], *, input_text: str) -> in
             package_root,
             cli_args,
         )
+    # Fast path: serve an already-validated hook through the running daemon (~50ms)
+    # instead of paying a fresh interpreter + full CLI import (~1s).
+    daemon_result = _try_daemon_hook(
+        guard_home=guard_home,
+        harness=harness,
+        input_text=input_text,
+        timeout_seconds=float(timeout_seconds),
+    )
+    if daemon_result is not None:
+        daemon_stdout, daemon_stderr, daemon_exit = daemon_result
+        if daemon_stdout:
+            _ = sys.stdout.write(daemon_stdout)
+        if daemon_stderr:
+            print(daemon_stderr, file=sys.stderr)
+        return daemon_exit
     result = run_isolated_hook_process(
         command,
         input_text=input_text,
