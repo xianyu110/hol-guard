@@ -2769,7 +2769,7 @@ function ProtectionCenterWorkspace() {
       setState({ kind: "ready", catalog, effective });
       return effective;
     } catch (error) {
-      setState({ kind: "error", message: error instanceof Error ? error.message : "Extensions are unavailable" });
+      setState((current) => current.kind === "ready" ? current : { kind: "error", message: error instanceof Error ? error.message : "Extensions are unavailable" });
       return null;
     }
   }, []);

@@ -230,7 +230,10 @@ export function ProtectionCenterWorkspace() {
       setState({ kind: "ready", catalog, effective });
       return effective;
     } catch (error) {
-      setState({ kind: "error", message: error instanceof Error ? error.message : "Extensions are unavailable" });
+      // A failed refresh after an authority action must not unmount the page
+      // (and with it the mapped action error); only an initial load may fall
+      // back to the full-page error state.
+      setState((current) => (current.kind === "ready" ? current : { kind: "error", message: error instanceof Error ? error.message : "Extensions are unavailable" }));
       return null;
     }
   }, []);
