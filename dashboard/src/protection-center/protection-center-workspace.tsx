@@ -310,7 +310,7 @@ export function ProtectionCenterWorkspace() {
   const runAuthorityAction = useCallback(async (kind: "repair" | "acknowledge", credentials: { approval_password?: string; approval_totp_code?: string }) => {
     setRecoveryBusy(true);
     setRecoveryError(null);
-    setRecoveryStatus(kind === "acknowledge" ? "Confirming the limited state…" : "Repairing local protection…");
+    setRecoveryStatus(null);
     try {
       const effective = kind === "acknowledge"
         ? await acknowledgeDegradedExtensionControlAuthority(credentials)

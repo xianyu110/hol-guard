@@ -2124,10 +2124,12 @@ function ProtectionAuthorityNotice(props) {
   if (health === "protected") return null;
   const view = authorityNoticeView(health);
   const [proofOpen, setProofOpen] = reactExports.useState(false);
+  const [pendingAction, setPendingAction] = reactExports.useState(null);
   const [copyState, setCopyState] = reactExports.useState("idle");
   reactExports.useEffect(() => {
     if (props.status) setProofOpen(false);
   }, [props.status]);
+  const gatePending = props.approvalGate === null && !props.error;
   const copyCommand = async () => {
     try {
       await navigator.clipboard.writeText(view.command);
@@ -2150,10 +2152,13 @@ function ProtectionAuthorityNotice(props) {
             {
               type: "button",
               "aria-busy": props.busy,
-              disabled: props.busy,
-              onClick: () => setProofOpen(true),
+              disabled: props.busy || gatePending,
+              onClick: () => {
+                setPendingAction(view.action.kind === "repair" ? "repair" : "acknowledge");
+                setProofOpen(true);
+              },
               className: "inline-flex min-h-11 items-center rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60",
-              children: view.actionLabel
+              children: gatePending ? "Loading approval settings…" : view.actionLabel
             }
           ) : null,
           view.action.kind === "none" ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
@@ -2181,6 +2186,7 @@ function ProtectionAuthorityNotice(props) {
             }
           )
         ] }),
+        props.busy ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { role: "status", className: `mt-3 text-sm font-medium ${warning2 ? "text-amber-950" : "text-brand-dark"}`, children: pendingAction === "acknowledge" ? "Confirming the limited state…" : "Repairing local protection…" }) : null,
         props.error ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { role: "alert", className: "mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800", children: props.error }) : null,
         props.status ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { role: "status", className: "mt-3 text-sm font-medium text-brand-dark", children: props.status }) : null,
         /* @__PURE__ */ jsxRuntimeExports.jsxs("details", { className: "mt-4", children: [
@@ -2834,7 +2840,7 @@ function ProtectionCenterWorkspace() {
   const runAuthorityAction = reactExports.useCallback(async (kind, credentials) => {
     setRecoveryBusy(true);
     setRecoveryError(null);
-    setRecoveryStatus(kind === "acknowledge" ? "Confirming the limited state…" : "Repairing local protection…");
+    setRecoveryStatus(null);
     try {
       const effective = kind === "acknowledge" ? await acknowledgeDegradedExtensionControlAuthority(credentials) : await recoverExtensionControlAuthority(credentials);
       if (kind === "acknowledge") {

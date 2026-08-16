@@ -49,7 +49,7 @@ const baseEffective: EffectiveExtensionControls = {
 };
 const repairMarkup = renderToStaticMarkup(createElement(ProtectionAuthorityNotice, {
   effective: baseEffective,
-  approvalGate: null,
+  approvalGate: { enabled: true, configured: true, cooldown_seconds: 0, cooldown_active: false, cooldown_expires_at: null, locked_until: null, fail_closed: true, strict_all_decisions: false, totp_enabled: false },
   onAction: () => undefined,
   onCheckAgain: () => undefined,
 }));
@@ -63,7 +63,7 @@ assert.match(repairMarkup, /bg-brand-blue/, "the primary action uses the brand p
 
 const degradedAckMarkup = renderToStaticMarkup(createElement(ProtectionAuthorityNotice, {
   effective: { ...baseEffective, health: "degraded-acknowledged" },
-  approvalGate: null,
+  approvalGate: { enabled: true, configured: true, cooldown_seconds: 0, cooldown_active: false, cooldown_expires_at: null, locked_until: null, fail_closed: true, strict_all_decisions: false, totp_enabled: false },
   onAction: () => undefined,
   onCheckAgain: () => undefined,
 }));
@@ -73,7 +73,7 @@ assert.doesNotMatch(degradedAckMarkup, /Repair protection/, "dashboard repair is
 
 const unenrolledMarkup = renderToStaticMarkup(createElement(ProtectionAuthorityNotice, {
   effective: { ...baseEffective, health: "unenrolled" },
-  approvalGate: null,
+  approvalGate: { enabled: true, configured: true, cooldown_seconds: 0, cooldown_active: false, cooldown_expires_at: null, locked_until: null, fail_closed: true, strict_all_decisions: false, totp_enabled: false },
   onAction: () => undefined,
   onCheckAgain: () => undefined,
 }));
@@ -84,7 +84,7 @@ assert.doesNotMatch(unenrolledMarkup, /bg-amber-50/, "setup guidance is informat
 
 const protectedMarkup = renderToStaticMarkup(createElement(ProtectionAuthorityNotice, {
   effective: { ...baseEffective, health: "protected" },
-  approvalGate: null,
+  approvalGate: { enabled: true, configured: true, cooldown_seconds: 0, cooldown_active: false, cooldown_expires_at: null, locked_until: null, fail_closed: true, strict_all_decisions: false, totp_enabled: false },
   onAction: () => undefined,
   onCheckAgain: () => undefined,
 }));

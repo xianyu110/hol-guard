@@ -99,12 +99,14 @@ export function ProtectionAuthorityNotice(props: {
   if (health === "protected") return null;
   const view = authorityNoticeView(health);
   const [proofOpen, setProofOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"repair" | "acknowledge" | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   // A success status means the action completed and the workspace reloaded;
   // close the proof modal so the confirmation is visible on the page.
   useEffect(() => {
     if (props.status) setProofOpen(false);
   }, [props.status]);
+  const gatePending = props.approvalGate === null && !props.error;
 
   const copyCommand = async () => {
     try {
@@ -132,10 +134,10 @@ export function ProtectionAuthorityNotice(props: {
           {view.actionLabel && view.action.kind !== "none" ? <button
             type="button"
             aria-busy={props.busy}
-            disabled={props.busy}
-            onClick={() => setProofOpen(true)}
+            disabled={props.busy || gatePending}
+            onClick={() => { setPendingAction(view.action.kind === "repair" ? "repair" : "acknowledge"); setProofOpen(true); }}
             className="inline-flex min-h-11 items-center rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
-          >{view.actionLabel}</button> : null}
+          >{gatePending ? "Loading approval settings…" : view.actionLabel}</button> : null}
           {view.action.kind === "none" ? <button
             type="button"
             onClick={() => { void copyCommand(); }}
@@ -148,6 +150,7 @@ export function ProtectionAuthorityNotice(props: {
             className="inline-flex min-h-11 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-brand-dark hover:border-brand-blue/40 disabled:opacity-60"
           >Check again</button>
         </div>
+        {props.busy ? <p role="status" className={`mt-3 text-sm font-medium ${warning ? "text-amber-950" : "text-brand-dark"}`}>{pendingAction === "acknowledge" ? "Confirming the limited state…" : "Repairing local protection…"}</p> : null}
         {props.error ? <p role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{props.error}</p> : null}
         {props.status ? <p role="status" className="mt-3 text-sm font-medium text-brand-dark">{props.status}</p> : null}
         <details className="mt-4">
