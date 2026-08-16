@@ -149,9 +149,7 @@ def _overload_response() -> bytes:
         b"Connection: close\r\n"
         b"Content-Type: application/json\r\n"
         b"Cache-Control: no-store\r\n"
-        b"Retry-After: 1\r\n"
-        + f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii")
-        + payload
+        b"Retry-After: 1\r\n" + f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii") + payload
     )
 
 
