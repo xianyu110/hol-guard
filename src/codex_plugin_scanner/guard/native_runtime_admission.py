@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import errno
-import os
 import secrets
 import threading
 import time
